@@ -93,6 +93,7 @@ static Inventory player_inventory = { 0, { 0 } };
 
 ClickableObject clickableObjects[CLICKABLE_OBJECTS];
 
+float playerSpeed = 75.0f;
 Vector2 zero = {0};
 Vector2 mousePosition = {0};
 Vector2 playerTarget = { 0, 300 };
@@ -108,6 +109,20 @@ enum Scenes {
 //----------------------------------------------------------------------------------
 // Gameplay Screen Functions Definition
 //----------------------------------------------------------------------------------
+
+Rectangle WorldObjectToRect(WorldObject* object)
+{
+     return (Rectangle){object->position.x, object->position.y, object->size.x * object->scale.x, object->size.y * object->scale.y};
+}
+
+void PickUpItem(ClickableObject *object)
+{
+    object->isTaken = true;
+    object->canTake = false;
+    player_inventory.items[player_inventory.items_taken] = object->inventory_item;
+    player_inventory.items_taken += 1;
+    object->clicked = false;
+}
 
 void InitGameplayScreen(void)
 {
@@ -151,7 +166,7 @@ void InitGameplayScreen(void)
     chest.isTaken = false;
 
     key.world_item = (WorldObject){ 0 };
-    key.world_item.position = (Vector2){ 124, 350 };
+    key.world_item.position = (Vector2){ 124, 390 };
     key.world_item.size = (Vector2){ 8, 8 };
     key.world_item.scale = (Vector2){ 4, 4 };
     key.world_item.animation = (Animation){ 0 };
@@ -174,19 +189,23 @@ void UpdateGameplayScreen(void)
 {
     dir = 1;
     mousePosition = GetMousePosition();
+    if (mousePosition.y < INVENTORY_OPEN)
+    {
+        showInventory = 1;
+        return; // Early out, so that player doesnt move when clicking in inventory
+    }
+    else
+    {
+        showInventory = 0;
+    }
+
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
     {
         for (int i = 0; i < CLICKABLE_OBJECTS; ++i)
         {
             clickableObjects[i].clicked = false;
-            Rectangle objectRect = {
-                clickableObjects[i].world_item.position.x,
-                clickableObjects[i].world_item.position.y,
-                clickableObjects[i].world_item.size.x * clickableObjects[i].world_item.scale.x,
-                clickableObjects[i].world_item.size.y * clickableObjects[i].world_item.scale.y
-            };
-
-            if (CheckCollisionPointRec(mousePosition, objectRect))
+            
+            if (CheckCollisionPointRec(mousePosition, WorldObjectToRect(&clickableObjects[i].world_item)))
             {
                 clickableObjects[i].clicked = true;
             }
@@ -198,16 +217,7 @@ void UpdateGameplayScreen(void)
         player.animation = player_walk_animation;
     }
 
-    if (mousePosition.y < INVENTORY_OPEN)
-    {
-        showInventory = 1;
-    }
-    else
-    {
-        showInventory = 0;
-    }
-
-    if (player.position.x == playerTarget.x && player.position.y == playerTarget.y)
+    if ((int)player.position.x == (int)playerTarget.x && (int)player.position.y == (int)playerTarget.y)
     {
         player.animation = player_idle_animation;
         for (int i = 0; i < CLICKABLE_OBJECTS; ++i)
@@ -220,33 +230,36 @@ void UpdateGameplayScreen(void)
                 }
                 else if (clickableObjects[i].canTake)
                 {
-                    clickableObjects[i].isTaken = true;
-                    clickableObjects[i].canTake = false;
-                    player_inventory.items[player_inventory.items_taken] = clickableObjects[i].inventory_item;
-                    player_inventory.items_taken += 1;
-                    clickableObjects[i].clicked = false;
+                    PickUpItem(&clickableObjects[i]);
                 }
             }
         }
     }
     else
     {
-        if (playerTarget.x - player.position.x > 0)
+        if (playerTarget.x - player.position.x > 0.1f)
         {
-            ++player.position.x;
+            player.position.x += GetFrameTime() * playerSpeed;
         }
-        else if (playerTarget.x - player.position.x < 0)
+        else if (playerTarget.x - player.position.x < -0.1f)
         {
-            --player.position.x;
+            player.position.x -= GetFrameTime() * playerSpeed;
             dir = -1;
         }
-        if (playerTarget.y - player.position.y > 0)
-        {
-            ++player.position.y;
+        else {
+            player.position.x = playerTarget.x;
         }
-        else if (playerTarget.y - player.position.y < 0)
+        if (playerTarget.y - player.position.y > 0.1f)
         {
-            --player.position.y;
+            player.position.y += GetFrameTime() * playerSpeed;
+        }
+        else if (playerTarget.y - player.position.y < -0.1f)
+        {
+            player.position.y -= GetFrameTime() * playerSpeed;
+        }
+        else
+        {
+            player.position.y = playerTarget.y;
         }
     }
 
@@ -279,12 +292,7 @@ void DrawGameplayScreen(void)
             (Rectangle) {
                 clickableObjects[i].world_item.size.x * clickableObjects[i].world_item.animation.frame, 0, clickableObjects[i].world_item.size.x, clickableObjects[i].world_item.size.y
             },
-            (Rectangle) {
-                clickableObjects[i].world_item.position.x,
-                clickableObjects[i].world_item.position.y,
-                clickableObjects[i].world_item.size.x * clickableObjects[i].world_item.scale.x,
-                clickableObjects[i].world_item.size.y * clickableObjects[i].world_item.scale.y
-            },
+            WorldObjectToRect(&clickableObjects[i].world_item),
             zero,
             0.0f,
             WHITE
@@ -293,8 +301,7 @@ void DrawGameplayScreen(void)
     }  
     
     Rectangle source = { player.size.x * player.animation.frame, 0, dir * player.size.x, player.size.y };
-    Rectangle dest = { player.position.x, player.position.y, player.size.x * player.scale.x, player.size.y * player.scale.y };
-    DrawTexturePro(player.animation.sprite, source, dest, zero, 0.0f, WHITE);
+    DrawTexturePro(player.animation.sprite, source, WorldObjectToRect(&player), zero, 0.0f, WHITE);
 
     if (showInventory != 0)
     {
