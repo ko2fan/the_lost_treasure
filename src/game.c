@@ -20,9 +20,12 @@
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
 #define BACKGROUND_LAYERS 6
-#define CLICKABLE_OBJECTS 2
+#define CLICKABLE_OBJECTS 3
 #define MAX_INVENTORY 10
 #define INVENTORY_OPEN 80
+#define DIALOGUE_OPEN 120
+#define MAX_DIALOGUES 1
+#define MAX_OPTIONS 3
 
 //----------------------------------------------------------------------------------
 // Module Variables Definition (local)
@@ -31,6 +34,8 @@ static int framesCounter = 0;
 static int finishScreen = 0;
 static int dir = 1;
 static int showInventory = 0;
+static int showDialogue = 0;
+static int hover = 0;
 
 Texture2D background_layers[BACKGROUND_LAYERS];
 
@@ -71,6 +76,24 @@ typedef struct WorldObject
 static WorldObject player = { 0 };
 static WorldObject butterfly = { 0 };
 
+typedef struct Dialogue
+{
+    char* spoken_dialogue;
+    int total_answers;
+    char* answer_dialogue_options[MAX_OPTIONS];
+    Rectangle dialogue_location[MAX_OPTIONS];
+    bool answer_selected;
+    int chosen_answer;
+} Dialogue;
+static Dialogue woodcutter_welcome = { 0 };
+
+typedef struct NPC
+{
+    int current_dialogue;
+    Dialogue* dialogue[MAX_DIALOGUES];
+} NPC;
+static NPC woodcutter_npc = { 0 };
+
 typedef struct ClickableObject
 {
     WorldObject world_item;
@@ -80,9 +103,12 @@ typedef struct ClickableObject
     bool isOpen;
     bool canTake;
     bool isTaken;
+    bool canTalk;
+    NPC* npc;
 } ClickableObject;
 static ClickableObject chest = { 0 };
 static ClickableObject key = { 0 };
+static ClickableObject woodcutter = { 0 };
 
 typedef struct Inventory
 {
@@ -97,9 +123,11 @@ float playerSpeed = 75.0f;
 Vector2 zero = {0};
 Vector2 mousePosition = {0};
 Vector2 playerTarget = { 0, 300 };
+Rectangle exitLocation = { 600, 400, 25, 25 };
 
 Animation player_idle_animation = {0};
 Animation player_walk_animation = {0};
+Dialogue* visible_dialogue;
 
 enum Scenes {
     SCENE_FOREST,
@@ -128,6 +156,8 @@ void InitGameplayScreen(void)
 {
     framesCounter = 0;
     finishScreen = 0;
+
+    // BACKGROUNDS ////////////////////////////////////////////////////////////
     background_layers[0] = LoadTexture("data/bg.png");
     background_layers[1] = LoadTexture("data/trees3.png");
     background_layers[2] = LoadTexture("data/trees2.png");
@@ -135,6 +165,7 @@ void InitGameplayScreen(void)
     background_layers[4] = LoadTexture("data/bushes.png");
     background_layers[5] = LoadTexture("data/grass.png");
 
+    // PLAYER /////////////////////////////////////////////////////////////////
     player_idle_animation.sprite = LoadTexture("data/GraveRobber.png");
     player_idle_animation.total_frames = 1;
 
@@ -146,12 +177,31 @@ void InitGameplayScreen(void)
     player.scale = (Vector2){ 4, 4 };
     player.animation = player_idle_animation;
 
+    // BUTTERFLY //////////////////////////////////////////////////////////////
     butterfly.position = (Vector2){ 0, 0 };
     butterfly.size = (Vector2){ 1920, 1080 };
     butterfly.scale = (Vector2){ 1, 1 };
     butterfly.animation = (Animation){ 0 };
     butterfly.animation.sprite = LoadTexture("data/butterfly1.png");
 
+    // DIALOGUE ///////////////////////////////////////////////////////////////
+    woodcutter_welcome.spoken_dialogue = "Hello, World!";
+    woodcutter_welcome.total_answers = 3;
+    woodcutter_welcome.answer_dialogue_options[0] = "Hello Mr.";
+    woodcutter_welcome.answer_dialogue_options[1] = "You say hello, I say goodbye";
+    woodcutter_welcome.answer_dialogue_options[2] = "Goodbye";
+    Vector2 textSize = MeasureTextEx(font, woodcutter_welcome.answer_dialogue_options[0], font.baseSize * 2, 4);
+    woodcutter_welcome.dialogue_location[0] = (Rectangle){ 200, 320, textSize.x, textSize.y };
+    textSize = MeasureTextEx(font, woodcutter_welcome.answer_dialogue_options[1], font.baseSize * 2, 4);
+    woodcutter_welcome.dialogue_location[1] = (Rectangle){ 200, 320 + textSize.y + 5, textSize.x, textSize.y };
+    textSize = MeasureTextEx(font, woodcutter_welcome.answer_dialogue_options[2], font.baseSize * 2, 4);
+    woodcutter_welcome.dialogue_location[2] = (Rectangle){ 200, 320 + ((textSize.y + 5) * 2), textSize.x, textSize.y };
+
+    // WOODCUTTER NPC /////////////////////////////////////////////////////////
+    woodcutter_npc.current_dialogue = 0;
+    woodcutter_npc.dialogue[0] = &woodcutter_welcome;
+
+    // CHEST //////////////////////////////////////////////////////////////////
     chest.world_item = (WorldObject){ 0 };
     chest.world_item.position = (Vector2){ 400, 350 };
     chest.world_item.size = (Vector2){ 32, 32 };
@@ -164,7 +214,10 @@ void InitGameplayScreen(void)
     chest.isOpen = false;
     chest.canTake = false;
     chest.isTaken = false;
+    chest.canTalk = false;
+    chest.npc = 0;
 
+    // KEY ////////////////////////////////////////////////////////////////////
     key.world_item = (WorldObject){ 0 };
     key.world_item.position = (Vector2){ 124, 390 };
     key.world_item.size = (Vector2){ 8, 8 };
@@ -179,16 +232,65 @@ void InitGameplayScreen(void)
     key.isOpen = false;
     key.canTake = true;
     key.isTaken = false;
+    key.canTalk = false;
+    key.npc = 0;
 
+    // WOODCUTTER /////////////////////////////////////////////////////////////
+    woodcutter.world_item = (WorldObject){ 0 };
+    woodcutter.world_item.position = (Vector2){ 600, 320 };
+    woodcutter.world_item.size = (Vector2){ 48, 48 };
+    woodcutter.world_item.scale = (Vector2){ 4, 4 };
+    woodcutter.world_item.animation = (Animation){ 0 };
+    woodcutter.world_item.animation.sprite = LoadTexture("data/Woodcutter.png");
+    woodcutter.world_item.animation.total_frames = 4;
+    woodcutter.clicked = false;
+    woodcutter.canOpen = false;
+    woodcutter.isOpen = false;
+    woodcutter.canTake = false;
+    woodcutter.isTaken = false;
+    woodcutter.canTalk = true;
+    woodcutter.npc = &woodcutter_npc;
+
+    // CLICKABLE OBJECTS //////////////////////////////////////////////////////
     clickableObjects[0] = chest;
     clickableObjects[1] = key;
+    clickableObjects[2] = woodcutter;
+
 
 }
 
 void UpdateGameplayScreen(void)
 {
     dir = 1;
+    hover = 0;
     mousePosition = GetMousePosition();
+
+    if (showDialogue == 1)
+    {
+        for (int i = 0; i < visible_dialogue->total_answers; ++i)
+        {
+            if (CheckCollisionPointRec(mousePosition, visible_dialogue->dialogue_location[i]))
+            {
+                hover = i;
+                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+                {
+                    visible_dialogue->answer_selected = true;
+                    visible_dialogue->chosen_answer = i;
+                    showDialogue = 0;
+                }
+            }
+        }
+        
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+        {
+            if (CheckCollisionPointRec(mousePosition, exitLocation))
+            {
+                showDialogue = 0;
+            }
+        }
+        
+        return; // early out so you cant walk around whilst in dialogue
+    }
     if (mousePosition.y < INVENTORY_OPEN)
     {
         showInventory = 1;
@@ -231,6 +333,12 @@ void UpdateGameplayScreen(void)
                 else if (clickableObjects[i].canTake)
                 {
                     PickUpItem(&clickableObjects[i]);
+                }
+                else if (clickableObjects[i].canTalk)
+                {
+                    showDialogue = 1;
+                    clickableObjects[i].clicked = false;
+                    visible_dialogue = clickableObjects[i].npc->dialogue[clickableObjects[i].npc->current_dialogue];
                 }
             }
         }
@@ -314,6 +422,24 @@ void DrawGameplayScreen(void)
             Rectangle dest = { 20 * i, 20, sprite->width * scale, sprite->height * scale};
             DrawTexturePro(*sprite, source, dest, zero, 0.0f, WHITE);
         }
+    }
+
+    if (showDialogue != 0)
+    {
+        DrawRectangle(0, 300, GetScreenWidth(), DIALOGUE_OPEN, DARKGRAY);
+        DrawTextEx(font, visible_dialogue->spoken_dialogue, (Vector2) { 20, 300 }, font.baseSize * 2, 4, YELLOW);
+        for (int i = 0; i < visible_dialogue->total_answers; ++i)
+        {
+            DrawTextEx(
+                font,
+                visible_dialogue->answer_dialogue_options[i],
+                (Vector2) { visible_dialogue->dialogue_location[i].x, visible_dialogue->dialogue_location[i].y },
+                font.baseSize * 2,
+                4,
+                hover == i ? GREEN : BLUE);
+        }
+        
+        DrawTextEx(font, "Exit", (Vector2) { 600, 400 }, font.baseSize, 4, RED);
     }
 }
 
