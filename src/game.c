@@ -26,6 +26,7 @@
 #define DIALOGUE_OPEN 120
 #define MAX_DIALOGUES 1
 #define MAX_OPTIONS 3
+#define MAX_DESCRIPTION 128
 
 //----------------------------------------------------------------------------------
 // Module Variables Definition (local)
@@ -36,6 +37,8 @@ static int dir = 1;
 static int showInventory = 0;
 static int showDialogue = 0;
 static int hover = 0;
+static int selectedObject = -1;
+static int highlight = -1;
 
 Texture2D background_layers[BACKGROUND_LAYERS];
 
@@ -98,7 +101,7 @@ typedef struct ClickableObject
 {
     WorldObject world_item;
     InventoryObject inventory_item;
-    bool clicked;
+    char description[MAX_DESCRIPTION];
     bool canOpen;
     bool isOpen;
     bool canTake;
@@ -149,7 +152,6 @@ void PickUpItem(ClickableObject *object)
     object->canTake = false;
     player_inventory.items[player_inventory.items_taken] = object->inventory_item;
     player_inventory.items_taken += 1;
-    object->clicked = false;
 }
 
 void InitGameplayScreen(void)
@@ -209,7 +211,7 @@ void InitGameplayScreen(void)
     chest.world_item.animation = (Animation){ 0 };
     chest.world_item.animation.sprite = LoadTexture("data/Chest.png");
     chest.world_item.animation.total_frames = 4;
-    chest.clicked = false;
+    TextCopy(chest.description, "Treasure Chest");
     chest.canOpen = true;
     chest.isOpen = false;
     chest.canTake = false;
@@ -227,7 +229,7 @@ void InitGameplayScreen(void)
     key.world_item.animation.total_frames = 4;
     key.inventory_item = (InventoryObject){0};
     key.inventory_item.object_sprite = LoadTexture("data/Key.png");
-    key.clicked = false;
+    TextCopy(key.description, "A silver key");
     key.canOpen = false;
     key.isOpen = false;
     key.canTake = true;
@@ -243,7 +245,7 @@ void InitGameplayScreen(void)
     woodcutter.world_item.animation = (Animation){ 0 };
     woodcutter.world_item.animation.sprite = LoadTexture("data/Woodcutter.png");
     woodcutter.world_item.animation.total_frames = 4;
-    woodcutter.clicked = false;
+    TextCopy(woodcutter.description, "A man holding an axe");
     woodcutter.canOpen = false;
     woodcutter.isOpen = false;
     woodcutter.canTake = false;
@@ -263,6 +265,7 @@ void UpdateGameplayScreen(void)
 {
     dir = 1;
     hover = 0;
+    highlight = -1;
     mousePosition = GetMousePosition();
 
     if (showDialogue == 1)
@@ -303,43 +306,46 @@ void UpdateGameplayScreen(void)
 
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
     {
-        for (int i = 0; i < CLICKABLE_OBJECTS; ++i)
-        {
-            clickableObjects[i].clicked = false;
-            
-            if (CheckCollisionPointRec(mousePosition, WorldObjectToRect(&clickableObjects[i].world_item)))
-            {
-                clickableObjects[i].clicked = true;
-            }
-        }
-        
+        selectedObject = 0;
+
         playerTarget.x = mousePosition.x - (player.size.x * player.scale.x) / 2;
         playerTarget.y = mousePosition.y - player.size.y * player.scale.y;
         playerTarget.y = MAX(playerTarget.y, 300);
         player.animation = player_walk_animation;
     }
+    
+    for (int i = 0; i < CLICKABLE_OBJECTS; ++i)
+    {
+        if (CheckCollisionPointRec(mousePosition, WorldObjectToRect(&clickableObjects[i].world_item)))
+        {
+            if (!clickableObjects[i].isTaken)
+                highlight = i;
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+            {
+                selectedObject = i;
+            }
+        }
+    }
 
     if ((int)player.position.x == (int)playerTarget.x && (int)player.position.y == (int)playerTarget.y)
     {
         player.animation = player_idle_animation;
-        for (int i = 0; i < CLICKABLE_OBJECTS; ++i)
+        if (selectedObject != -1)
         {
-            if (clickableObjects[i].clicked)
+            if (clickableObjects[selectedObject].canOpen)
             {
-                if (clickableObjects[i].canOpen)
-                {
-                    clickableObjects[i].isOpen = true;
-                }
-                else if (clickableObjects[i].canTake)
-                {
-                    PickUpItem(&clickableObjects[i]);
-                }
-                else if (clickableObjects[i].canTalk)
-                {
-                    showDialogue = 1;
-                    clickableObjects[i].clicked = false;
-                    visible_dialogue = clickableObjects[i].npc->dialogue[clickableObjects[i].npc->current_dialogue];
-                }
+                clickableObjects[selectedObject].isOpen = true;
+            }
+            else if (clickableObjects[selectedObject].canTake)
+            {
+                PickUpItem(&clickableObjects[selectedObject]);
+                selectedObject = -1;
+            }
+            else if (clickableObjects[selectedObject].canTalk)
+            {
+                showDialogue = 1;
+                visible_dialogue = clickableObjects[selectedObject].npc->dialogue[clickableObjects[selectedObject].npc->current_dialogue];
+                selectedObject = -1;
             }
         }
     }
@@ -410,6 +416,12 @@ void DrawGameplayScreen(void)
     
     Rectangle source = { player.size.x * player.animation.frame, 0, dir * player.size.x, player.size.y };
     DrawTexturePro(player.animation.sprite, source, WorldObjectToRect(&player), zero, 0.0f, WHITE);
+    
+    if (highlight != -1)
+    {
+        Vector2 location = { clickableObjects[highlight].world_item.position.x - 40, clickableObjects[highlight].world_item.position.y };
+        DrawTextEx(font, clickableObjects[highlight].description, location, font.baseSize * 2, 4, WHITE);
+    }
 
     if (showInventory != 0)
     {
