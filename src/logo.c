@@ -110,7 +110,7 @@ void UpdateLogoScreen(void)
         }
         else    // When all letters have appeared, just fade out everything
         {
-            if (framesCounter > 200)
+            if (framesCounter > 120)
             {
                 alpha -= 0.02f;
 
