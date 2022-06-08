@@ -1,6 +1,9 @@
 #include "raylib.h"
 #include "scenes.h"
 
+#define BACKGROUND_LAYERS 6
+#define CLICKABLE_OBJECTS 3
+
 static Texture2D background_layers[BACKGROUND_LAYERS];
 static WorldObject butterfly = { 0 };
 static Dialogue woodcutter_welcome = { 0 };
@@ -23,6 +26,13 @@ void InitForestScene(Font font)
     // Init global variables
     framesCounter = 0;
 
+    // locals
+    framesCounter = 0;
+    showInventory = 0;
+    showDialogue = 0;
+    selectedObject = -1;
+    highlight = -1;
+
     // BACKGROUNDS ////////////////////////////////////////////////////////////
     background_layers[0] = LoadTexture("data/bg.png");
     background_layers[1] = LoadTexture("data/trees3.png");
@@ -42,6 +52,8 @@ void InitForestScene(Font font)
     player.size = (Vector2){ 48, 48 };
     player.scale = (Vector2){ 4, 4 };
     player.animation = player_idle_animation;
+
+    player_target = (Vector2){ 0, 300 };
 
     // BUTTERFLY //////////////////////////////////////////////////////////////
     butterfly.position = (Vector2){ 0, 0 };
@@ -109,7 +121,7 @@ void InitForestScene(Font font)
     woodcutter.world_item.animation = (Animation){ 0 };
     woodcutter.world_item.animation.sprite = LoadTexture("data/Woodcutter.png");
     woodcutter.world_item.animation.total_frames = 4;
-    TextCopy(woodcutter.description, "A man holding an axe");
+    TextCopy(woodcutter.description, "Man with axe");
     woodcutter.canOpen = false;
     woodcutter.isOpen = false;
     woodcutter.canTake = false;
@@ -177,6 +189,10 @@ void UpdateForestScene()
                 visible_dialogue = clickableObjects[selectedObject].npc->dialogue[clickableObjects[selectedObject].npc->current_dialogue];
                 selectedObject = -1;
             }
+        }
+        if (player.position.x > 650)
+        {
+            ChangeScene(RUINS);
         }
     }
     else

@@ -84,14 +84,18 @@ int UpdateDialogue(int showDialogue)
 
 void MovePlayer()
 {
-    if (player_target.x - player.position.x > 0.1f)
+    if (player_target.x - player.position.x > 0.35f)
     {
         player.position.x += GetFrameTime() * player_speed;
+        if (player.position.x > player_target.x)
+            player.position.x = player_target.x;
     }
-    else if (player_target.x - player.position.x < -0.1f)
+    else if (player_target.x - player.position.x < -0.35f)
     {
         player.position.x -= GetFrameTime() * player_speed;
         dir = -1;
+        if (player.position.x < player_target.x)
+            player.position.x = player_target.x;
     }
     else 
     {
